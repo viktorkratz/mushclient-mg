@@ -30,7 +30,6 @@ currentHp=tonumber(GetPluginVariable(mg_char_id,"hp"))
 if (currentHp<=(lastHp-hp_announcement_treshold)) or (currentHp >= (lastHp+hp_announcement_treshold)) then
 modHp=currentHp % 10
 hpSound=((currentHp-modHp)/10)
-Note(hpSound)
  world.PlaySound(0,"healthtones\\health"..hpSound..".wav",0,0,0)
 lastHp=currentHp
 end -- compare if
