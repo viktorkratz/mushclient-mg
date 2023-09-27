@@ -27,8 +27,8 @@ if(id==gmcp_handler_id and msg==2 ) then
 addCharPackage()
 end -- Add package if
 if(id==gmcp_handler_id and msg==1 ) then
-startNr, endNr, packageName,gmcpJson=string.find(data,"^%s*(MG.char.vitals)%s*({.*})%s*$")
-if startNr ~= nil then
+startNr, endNr, subpackage,gmcpJson=string.find(data,"^%s*MG.char\.(vitals)%s*({.*})%s*$")
+if subpackage=="vitals" then
 decoded=json.decode(gmcpJson)
 
 SetVariable("hp",decoded.hp)
