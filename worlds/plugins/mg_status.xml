@@ -20,14 +20,7 @@
 </plugin>
 <script>
 <![CDATA[
-mg_char_id="267745b27b2f0e42200da929"
-function OnPluginBroadcast (msg, id, name, data)
-if id == mg_char_id and msg==1 then
-hp=GetPluginVariable(mg_char_id,"hp")
-sp=GetPluginVariable(mg_char_id,"sp")
-SetStatus(hp .. " " .. sp)
-end -- if
-end -- OnPluginBroadcast
+dofile(string.sub(GetPluginInfo (GetPluginID (), 6),1,-5)..".lua")
 ]]>
 </script>
 </muclient>

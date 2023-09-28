@@ -1,0 +1,30 @@
+{
+    "files.encoding": "windows1252",
+    "[lua]": {
+        "editor.quickSuggestions": {
+            "comments": "inline",
+            "other": "on",
+            "strings": "on"
+        },
+        "editor.semanticHighlighting.enabled": true,
+    },
+    "Lua.diagnostics.globals": [
+        "SetVariable",
+        "GetVariable",
+        "ColourNote",
+        "json",
+        "BroadcastPlugin",
+        "CallPlugin",
+        "Note",
+        "Version",
+        "EnablePlugin",
+        "GetPluginID",
+        "GetPluginInfo",
+        "SendPkt",
+        "GetPluginVariable",
+        "PlaySound",
+        "SetStatus",
+        "sqlite3",
+        "utils"
+    ]
+}

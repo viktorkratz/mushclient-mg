@@ -21,20 +21,7 @@
 
 <script>
 <![CDATA[
-local mg_char_id="267745b27b2f0e42200da929"
-local lastHp=0
-local hp_announcement_treshold=9
-function OnPluginBroadcast (msg, id, name, data)
-if(id==mg_char_id and msg==1) then
-currentHp=tonumber(GetPluginVariable(mg_char_id,"hp"))
-if (currentHp<=(lastHp-hp_announcement_treshold)) or (currentHp >= (lastHp+hp_announcement_treshold)) then
-modHp=currentHp % 10
-hpSound=((currentHp-modHp)/10)
- world.PlaySound(0,"healthtones\\health"..hpSound..".wav",0,0,0)
-lastHp=currentHp
-end -- compare if
-end -- if
-end -- function
+dofile(string.sub(GetPluginInfo (GetPluginID (), 6),1,-5)..".lua")
 ]]>
 </script>
 </muclient>
