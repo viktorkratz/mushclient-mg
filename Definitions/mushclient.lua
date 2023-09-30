@@ -1,5 +1,6 @@
+---@diagnostic disable: lowercase-global
 --mmmeta
-
+---@import ReturnCodes
 ---@return integer
 ---@param variableName string
 ---@param contents string
@@ -15,8 +16,9 @@ end
 
 ---@param VariableName string
 ---@param Contents string
----@return eInvalidObjectLabel|eOK
+---@return ReturnCodes.eInvalidObjectLabel|ReturnCodes.eOK
 function SetVariable(VariableName, Contents)
+    return ReturnCodes
 end
 
 ---@param message integer
@@ -26,12 +28,12 @@ function BroadcastPlugin(message, text)
     return 1
 end
 
----@return eNoSuchPlugin |ePluginDisabled|eNoSuchRoutine|eErrorCallingPluginRoutine|eBadParameter|eOK
+---@return ReturnCodes
 ---@param PluginID string
 ---@param Routine string
 ---@param Argument string
 function CallPlugin(PluginID, Routine, Argument)
-    return 1
+    return ReturnCodes.eOK
 end
 
 ---@param TextColour string
@@ -51,25 +53,29 @@ function Version()
     return "1.2.3"
 end
 
----@return eNoSuchPlugin|eOK
+---@return (ReturnCodes.eNoSuchPlugin|ReturnCodes.eOK)|integer
 ---@param PluginID string
 ---@param Enabled boolean
 function EnablePlugin(PluginID, Enabled)
+    return ReturnCodes.eOK
 end
 
 ---@return string
 function GetPluginID()
+    return "plugin_id"
 end
 
----@return string|date|boolean|number
+---@return string|table|boolean|number
 ---@param PluginID string
 ---@param InfoType integer
 function GetPluginInfo(PluginID, InfoType)
+    return "Some example"
 end
 
 ---@param Packet string
----@return eOK|eWorldClosed
+---@return ReturnCodes
 function SendPkt(Packet)
+    return ReturnCodes.eOK
 end
 
 ---@param PluginID string
@@ -83,12 +89,13 @@ end
 ---@param Loop boolean?
 ---@param Volume number?
 ---@param Pan number?
----@return eCannotPlaySound|eBadParameter|eFileNotFound|eOK
+---@return ReturnCodes
 function PlaySound(Buffer, FileName, Loop, Volume, Pan)
     FileName = FileName or ""
     loop = loop or false
     Volume = Volume or 0
     pan = pan or 0
+    return ReturnCodes.eOK
 end
 
 ---@return nil
