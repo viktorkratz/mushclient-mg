@@ -40,7 +40,7 @@ function OnPluginTelnetSubnegotiation(msg_type, data)
 end    -- function OnPluginTelnetSubnegotiation
 
 function OnPluginSaveState()
-   SetVariable("GMCPDebug", GMCPDebug)
+   SetVariable("GMCPDebug", tostring(GMCPDebug))
 end
 
 function OnPluginTelnetRequest(msg_type, data)

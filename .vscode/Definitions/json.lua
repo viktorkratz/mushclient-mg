@@ -1,6 +1,6 @@
 ---@meta
 ---@class json
-json={}
+json = {}
 
 ---@param jsonStr string
 function json.decode(jsonStr)

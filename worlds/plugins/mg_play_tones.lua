@@ -7,7 +7,7 @@ function OnPluginBroadcast(msg, id, name, data)
         if (currentHp <= (lastHp - hp_announcement_treshold)) or (currentHp >= (lastHp + hp_announcement_treshold)) then
             local modHp = currentHp % 10
             local hpSound = ((currentHp - modHp) / 10)
-            PlaySound(0, "healthtones\\health" .. hpSound .. ".wav", 0, 0, 0)
+            PlaySound(0, "healthtones\\health" .. hpSound .. ".wav")
             lastHp = currentHp
         end -- compare if
     end     -- if
