@@ -23,8 +23,12 @@
          match="^mstart(.*)?$"
          regexp="y"
          enabled="y"
-         sequence="100">
-      </alias>
+         sequence="100" />
+      <alias script="MMode"
+         match="^mmode.*"
+         regexp="y"
+         enabled="y"
+         sequence="100" />
    </aliases>
    <script>
 <![CDATA[

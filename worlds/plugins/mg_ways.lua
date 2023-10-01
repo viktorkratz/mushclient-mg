@@ -4,7 +4,15 @@ require "utils"
 
 local mg_rooms_id = "13292fe3403d8b28f77bf5ac"
 local db_name = "mg_ways.db"
+local MODE_RECORD_ALL = "all"
+local MODE_RECORD_WARNING = "warn"
+local MODE_RECORD_EDIT_BOX = "edit"
+local routeRecordMode = nil
 local lastStart = nil
+local roomsOnRoute = {}
+local lastRoom = nil
+local currentSteps = {}
+local route = {}
 local default_directions = {}
 default_directions["w"] = "w"
 default_directions["westen"] = "w"
@@ -88,6 +96,28 @@ visibleExits
       db:close()
 end -- OnPluginInstall
 
+function OnPluginConnect()
+      routeRecordMode = GetVariable("mode")
+end -- OnPluginConnect
+
+function MMode()
+      routeRecordMode = utils.listbox("Wie sollen Wege beim erfassen von Routen aufgezeichnet werden?",
+            "Erfassungsmodus auswählen",
+            {
+                  MODE_RECORD_WARNING =
+                  "Nur Himmelsrichtungen zur Route hinzufügen, Warnung bei Raumübergang ohne erkannten Befehl.",
+                  MODE_RECORD_EDIT_BOX =
+                  "Nur Himmelsrichtungen zur Route hinzufügen, wenn das wechseln von Räumen mit anderen Befehlen erfolgte wird ein Eingabefeld zur Eingabe der Befehle beöffnet.",
+                  MODE_RECORD_ALL =
+                  "Alle Befehle, die während des Erfassens von Routen eingegeben werden werden zur Route hinzugefügt."
+            }, MODE_RECORD_EDIT_BOX
+      )
+      if routeRecordMode ~= nil then
+            SetVariable("mode", routeRecordMode)
+      end
+      return routeRecordMode
+end -- MMode
+
 function Migrate(db)
 end -- function migrate
 
@@ -123,7 +153,7 @@ WHERE w.from_id=:room_id
       local destinationRooms = {}
       while result == sqlite3.ROW do
             local row = stm:get_named_values()
-            destinationRooms.insert({
+            table.insert(destinationRooms, {
                   destination = { id = row.end_id, short = row.end_short },
                   start = { id = row.start_id, short = row.start_short }
             })
@@ -135,6 +165,15 @@ WHERE w.from_id=:room_id
 end -- getRoutesWithRoom
 
 function MStart(name, line, wildcards)
+      if routeRecordMode == nil then
+            local selectedMode = MMode()
+            if (selectedMode == nil) then
+                  utils.msgbox(
+                        "Es wurde kein Modus ausgewählt, das Erfassen von Wegen benötigt aber die Angabe eines Erfassungsmodus. Geben Sie mmode ein, um den Modus zu setzen bzw. später zu ändern.",
+                        "Kein Modus ausgewählt", "ok", "!")
+                  return nil
+            end
+      end
       if lastStart ~= nil then
             local replaceMsgResult = utils.msgbox(
                   "Es wird bereits eine Route aufgezeichnet. Soll trotzdem eine neue Route begonnen werden?", nil,
@@ -149,7 +188,7 @@ function MStart(name, line, wildcards)
       end -- if
 
       if IsStartingRoom(currentRoom.id) then
-            lastStart = currentRoom
+            StartRoute(currentRoom)
       else
             local possibleStarts = GetRoutesWithRoom(currentRoom.id)
             local lBoxEntries = { new = "Diesen Raum als Startpunkt nutzen." }
@@ -162,7 +201,7 @@ function MStart(name, line, wildcards)
                   "Dieser Raum ist noch nicht als Startraum angebunden. Wählen sie die passende Aktion aus.", nil,
                   lBoxEntries, "new")
             if lBoxResult == "new" then
-                  lastStart = currentRoom
+                  StartRoute(currentRoom)
             elseif lBoxResult == "go_start" then
                   ShowPossibleGotosForMstart(possibleStarts)
             elseif lBoxResult == "additional_route" then
@@ -175,13 +214,14 @@ function ShowPossibleGotosForMstart(routes)
       for i, route in ipairs(routes) do
             local newEntry = {}
             newEntry[route.destination.id] = route.destination.short
-            lbxDestinationSelectTable.insert(newEntry)
+            table.insert(lbxDestinationSelectTable, newEntry)
       end -- for
       local lbxResult = utils.listbox("Wählen Sie den Raum aus, in dem die Route begonnen werden soll.", nil,
             lbxDestinationSelectTable)
 end -- function
 
-function GetRoomInfo()
+function GetRoomInfo(warnOnRoomWithoutId)
+      warnOnRoomWithoutId = warnOnRoomWithoutId or true
       local roomJSON = GetPluginVariable(mg_rooms_id, "roomJSON")
       if roomJSON == nil then
             utils.msgbox(
@@ -191,8 +231,42 @@ function GetRoomInfo()
       end -- if for nil check
       local room = json.decode(roomJSON)
       if room.id == "" then
-            utils.msgbox("Dieser Raum kann nicht für Wege genutzt werden.")
+            if warnOnRoomWithoutId == true then
+                  utils.msgbox("Dieser Raum kann nicht für Wege genutzt werden.")
+            end
             return nil
       end -- if
       return room
 end       -- getRoomInfo
+
+function StartRoute(room)
+      lastStart = room
+      lastRoom = nil
+      currentSteps = {}
+      route = {}
+end
+
+function OnPluginCommand(sText)
+      if lastStart ~= nil then
+            local direction = default_directions[sText]
+            if direction ~= nil then
+                  table.insert(currentSteps, direction)
+            elseif routeRecordMode == MODE_RECORD_ALL then
+                  table.insert(currentSteps, sText)
+            end -- if default direction or mode record all
+      end -- if recording route
+      return true
+end
+
+function OnPluginBroadcast(msg, id, name, text)
+      if id == mg_rooms_id and msg == 1 and lastStart then
+            local room = GetRoomInfo(false)
+            if (room == nil) then
+                  return nil
+            end -- room is nil
+            table.insert(roomsOnRoute, room)
+            table.insert(route, { startroom = lastRoom, endRoom = room, Path = currentSteps })
+            lastRoom = room
+            currentSteps = {}
+      end -- is new room
+end       -- OnPluginBroadcast
