@@ -1,4 +1,5 @@
 require "json"
+require "os"
 require "sqlite3"
 require "utils"
 
@@ -11,6 +12,9 @@ local routeRecordMode = nil
 local lastStart = nil
 local roomsOnRoute = {}
 local lastRoom = nil
+local commandsEntered = {}
+local lastCommandWasDirection = false
+local lastTime = os.time()
 local currentSteps = {}
 local route = {}
 local default_directions = {}
@@ -38,6 +42,7 @@ default_directions["suedostoben"] = "soob"
 default_directions["sou"] = "sou"
 default_directions["suedostunten"] = "sou"
 default_directions["o"] = "o"
+default_directions["e"] = "o" -- For people used to play english muds :)
 default_directions["osten"] = "o"
 default_directions["oob"] = "oob"
 default_directions["ostoben"] = "oob"
@@ -104,11 +109,11 @@ function MMode()
       routeRecordMode = utils.listbox("Wie sollen Wege beim erfassen von Routen aufgezeichnet werden?",
             "Erfassungsmodus ausw‰hlen",
             {
-                  MODE_RECORD_WARNING =
+                  [MODE_RECORD_WARNING] =
                   "Nur Himmelsrichtungen zur Route hinzuf¸gen, Warnung bei Raum¸bergang ohne erkannten Befehl.",
-                  MODE_RECORD_EDIT_BOX =
+                  [MODE_RECORD_EDIT_BOX] =
                   "Nur Himmelsrichtungen zur Route hinzuf¸gen, wenn das wechseln von R‰umen mit anderen Befehlen erfolgte wird ein Eingabefeld zur Eingabe der Befehle beˆffnet.",
-                  MODE_RECORD_ALL =
+                  [MODE_RECORD_ALL] =
                   "Alle Befehle, die w‰hrend des Erfassens von Routen eingegeben werden werden zur Route hinzugef¸gt."
             }, MODE_RECORD_EDIT_BOX
       )
@@ -241,20 +246,24 @@ end       -- getRoomInfo
 
 function StartRoute(room)
       lastStart = room
-      lastRoom = nil
+      lastRoom = room
       currentSteps = {}
       route = {}
 end
 
 function OnPluginCommand(sText)
       if lastStart ~= nil then
+            lastTime = os.time()
             local direction = default_directions[sText]
+            lastCommandWasDirection = false
             if direction ~= nil then
+                  lastCommandWasDirection = true
                   table.insert(currentSteps, direction)
             elseif routeRecordMode == MODE_RECORD_ALL then
                   table.insert(currentSteps, sText)
             end -- if default direction or mode record all
-      end -- if recording route
+            table.insert(commandsEntered, sText)
+      end       -- if recording route
       return true
 end
 
@@ -265,8 +274,48 @@ function OnPluginBroadcast(msg, id, name, text)
                   return nil
             end -- room is nil
             table.insert(roomsOnRoute, room)
-            table.insert(route, { startroom = lastRoom, endRoom = room, Path = currentSteps })
+            if (os.time() - 00) > lastTime then
+                  local timeStr = "(" .. tostring(os.time() - lastTime) .. "ms)"
+                  if lastCommandWasDirection == false then
+                        table.insert(commandsEntered, timeStr)
+                  else
+                        table.insert(currentSteps, timeStr)
+                  end
+            end
+            if routeRecordMode == MODE_RECORD_EDIT_BOX and #currentSteps == 0 and #commandsEntered ~= #currentSteps then
+                  local suggestion = table.concat(commandsEntered, "\n")
+                  local inputResult = utils.editbox(
+                        "Geben Sie den Weg vom letzten g¸ltigen Raum in diesen Raum an. Im Textfeld sind bereits alle get‰tigten Befehle seit dem Betreten des letzten Raums enthalten.",
+                        "Weg angeben", suggestion)
+                  if inputResult == nil then
+                        currentSteps = commandsEntered
+                  else
+                        local parts = {}
+                        for line in string.gmatch(inputResult, "[^\n]*") do
+                              table.insert(parts, line)
+                        end
+                        currentSteps = parts
+                  end
+            end
+            table.insert(route, { startRoom = lastRoom, endRoom = room, path = currentSteps })
             lastRoom = room
             currentSteps = {}
+            commandsEntered = {}
       end -- is new room
 end       -- OnPluginBroadcast
+
+function MEnd(name, wildcards)
+      local lbxResult = 1
+      while lbxResult ~= nil do
+            local lbxRoute = {}
+            for key, value in ipairs(route) do
+                  lbxRoute[key] =
+                      key ..
+                      ": " ..
+                      value.startRoom.short .. "-> " .. value.endRoom.short .. ":" .. table.concat(value.path, ";")
+            end -- for loop
+            lbxResult = utils.listbox(
+                  "W‰hlen Sie einen Abschnitt der Route aus und klicken Sie auf ok, um diesen Abschnitt zu bearbeiten. Klicken Sie auf abbrechen um dass Bearbeiten der Route abzuschlieﬂen.",
+                  "Route bearbeiten", lbxRoute, lbxResult)
+      end -- Show listbox loop
+end       -- function

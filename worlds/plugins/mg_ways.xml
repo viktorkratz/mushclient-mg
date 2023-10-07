@@ -29,6 +29,13 @@
          regexp="y"
          enabled="y"
          sequence="100" />
+      <alias
+         match="^mend.*"
+         sequence="100"
+         regexp="y"
+         script="MEnd"
+         enabled="y"
+      />
    </aliases>
    <script>
 <![CDATA[

@@ -102,3 +102,8 @@ end
 ---@param Message string
 function SetStatus(Message)
 end
+
+---@return ReturnCodes
+function SaveState  ();
+    return ReturnCodes.eOK
+end

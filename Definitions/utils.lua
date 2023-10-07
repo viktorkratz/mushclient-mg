@@ -34,3 +34,43 @@ end
 function utils.listbox(msg, title, tbl, default)
     title = title or "MUSHclient"
 end
+
+---@class extrasTable
+extrasTable = {
+    box_width = nil,
+    box_height = nil,
+    prompt_width = nil,
+    prompt_height = nil,
+    reply_width = nil,
+    reply_height = nil,
+    max_length = nil,
+    validate = nil,
+    ok_button = nil,
+    cancel_button_width = nil,
+    read_only = nil,
+    no_default = nil
+}
+
+---@param msg string
+---@param title string?
+---@param default string?
+---@param font string?
+---@param fontsize integer?
+---@param extras extrasTable?
+---@return string?
+function utils.inputbox(msg, title, default, font, fontsize, extras)
+    title = title or "MUSHclient"
+    return nil
+end
+
+---@return string?
+---@param msg string
+---@param title string?
+---@param default string?
+---@param font string?
+---@param fontsize integer?
+---@param extras extrasTable?
+function utils.editbox(msg, title, default, font, fontsize, extras)
+    title = title or "MUSHclient"
+    return nil
+end
