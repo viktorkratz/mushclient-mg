@@ -1,5 +1,6 @@
 require "json"
 require "os"
+require "math"
 require "sqlite3"
 require "utils"
 
@@ -14,7 +15,7 @@ local roomsOnRoute = {}
 local lastRoom = nil
 local commandsEntered = {}
 local lastCommandWasDirection = false
-local lastTime = os.time()
+local lastTime = os.clock()
 local currentSteps = {}
 local route = {}
 local default_directions = {}
@@ -253,7 +254,7 @@ end
 
 function OnPluginCommand(sText)
       if lastStart ~= nil then
-            lastTime = os.time()
+            lastTime = os.clock()
             local direction = default_directions[sText]
             lastCommandWasDirection = false
             if direction ~= nil then
@@ -274,8 +275,9 @@ function OnPluginBroadcast(msg, id, name, text)
                   return nil
             end -- room is nil
             table.insert(roomsOnRoute, room)
-            if (os.time() - 00) > lastTime then
-                  local timeStr = "(" .. tostring(os.time() - lastTime) .. "ms)"
+            if (os.clock() - 0.1) > lastTime then
+                  local timeNumber = math.floor((os.clock() - lastTime) * 100)
+                  local timeStr = "(" .. tostring(timeNumber) .. "ms)"
                   if lastCommandWasDirection == false then
                         table.insert(commandsEntered, timeStr)
                   else
@@ -309,15 +311,17 @@ function MEnd(name, wildcards)
       local lbxResult = 1
       while lbxResult ~= nil do
             local lbxRoute = {}
+            local maximumDigitsCount = math.floor(math.log(#route, 10))
+            local formatStr = "%0" .. maximumDigitsCount .. "d"
             for key, value in ipairs(route) do
                   lbxRoute[key] =
-                      key ..
+                      string.format(formatStr, key) ..
                       ": " ..
                       value.startRoom.short .. "-> " .. value.endRoom.short .. ":" .. table.concat(value.path, ";")
             end -- for loop
-            lbxResult = utils.listbox(
+            lbxResult = tonumber(utils.listbox(
                   "W‰hlen Sie einen Abschnitt der Route aus und klicken Sie auf ok, um diesen Abschnitt zu bearbeiten. Klicken Sie auf abbrechen um dass Bearbeiten der Route abzuschlieﬂen.",
-                  "Route bearbeiten", lbxRoute, lbxResult)
+                  "Route bearbeiten", lbxRoute, lbxResult)) or 0
       end -- Show listbox loop
 end       -- function
 
@@ -359,7 +363,7 @@ function CheckLoop()
                         route[currentIndex] = route
                             [currentIndex + increment] -- If currentCounter+increment is greater then maxCounter, nil is assigned so the array is finished
                         currentIndex = currentIndex + 1
-                  end -- loops
-            end       -- if answer was yes
-      end             -- if loops found
-end                   -- function checkLoops
+                  end                                  -- loops
+            end                                        -- if answer was yes
+      end                                              -- if loops found
+end                                                    -- function checkLoops
