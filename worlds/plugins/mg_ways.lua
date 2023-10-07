@@ -305,6 +305,7 @@ function OnPluginBroadcast(msg, id, name, text)
 end       -- OnPluginBroadcast
 
 function MEnd(name, wildcards)
+      CheckLoop()
       local lbxResult = 1
       while lbxResult ~= nil do
             local lbxRoute = {}
@@ -319,3 +320,46 @@ function MEnd(name, wildcards)
                   "Route bearbeiten", lbxRoute, lbxResult)
       end -- Show listbox loop
 end       -- function
+
+function CheckLoop()
+      local loops = {}
+      local usedStartRooms = {}
+      local loopCounter = 0
+      for nr, routePart in ipairs(route) do
+            local startRoomId = routePart.startRoom.id
+            if usedStartRooms[startRoomId] ~= nil then
+                  loops[usedStartRooms[startRoomId]] = nr - 1
+                  loopCounter = loopCounter + 1
+            end -- if start room already used
+            usedStartRooms[startRoomId] = nr
+      end
+
+      if loopCounter > 0 then
+            local answer = utils.msgbox("Es wurden Schleifen im Weg entdeckt. Sollen diese entfernt werden?", nil,
+                  "yesno")
+            if answer == "yes" then
+                  local currentIndex = 1
+                  local increment = 0
+                  local loopStart = nil
+                  local loopEnd = nil
+                  local maxCounter = #route
+                  while currentIndex <= maxCounter
+                  do
+                        if loopStart == nil and loops[currentIndex] ~= nil then
+                              loopStart = currentIndex
+                              loopEnd = loops[currentIndex]
+                              increment = increment + ((loopEnd + 1) - loopStart)
+                        end -- if start of loop
+
+                        if currentIndex == loopEnd then
+                              loopStart = nil
+                              loopEnd = nil
+                        end -- if end of loop
+
+                        route[currentIndex] = route
+                            [currentIndex + increment] -- If currentCounter+increment is greater then maxCounter, nil is assigned so the array is finished
+                        currentIndex = currentIndex + 1
+                  end -- loops
+            end       -- if answer was yes
+      end             -- if loops found
+end                   -- function checkLoops

@@ -18,6 +18,7 @@ end
 ---@param type "ok"|"abortretryignore"|"okcancel"|"retrycancel"|"yesno"|"yesnocancel"|nil
 ---@param icon "!" | "?" | "i" | "." | nil
 ---@param default 1|2|3|nil
+---@return "yes"|"no"|"ok"|"retry"|"ignore"|"cancel"|"abort"
 function utils.msgbox(msg, title, type, icon, default)
     title = title or "MUSHclient"
     default = default or 1
