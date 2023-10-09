@@ -3,6 +3,6 @@ function OnPluginBroadcast(msg, id, name, data)
     if id == mg_char_id and msg == 1 then
         local hp = GetPluginVariable(mg_char_id, "hp")
         local sp = GetPluginVariable(mg_char_id, "sp")
-        SetStatus(hp .. " " .. sp)
+        SetStatus((hp or "") .. " " .. (sp or ""))
     end -- if
-end -- OnPluginBroadcast
+end     -- OnPluginBroadcast

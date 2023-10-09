@@ -34,6 +34,10 @@ function sqlite3Statement:get_named_values()
     return {}
 end
 
+function sqlite3Statement:reset()
+end
+
+
 ---@class sqlite3Db
 sqlite3Db = {}
 
@@ -93,6 +97,3 @@ sqlite3 = {
 function sqlite3.open(filename)
     return sqlite3Db
 end
-
----@return true?
-sqlite3.ROW = nil

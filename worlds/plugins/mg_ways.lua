@@ -3,20 +3,31 @@ require "os"
 require "math"
 require "sqlite3"
 require "utils"
-
 local mg_rooms_id = "13292fe3403d8b28f77bf5ac"
 local db_name = "mg_ways.db"
 local MODE_RECORD_ALL = "all"
 local MODE_RECORD_WARNING = "warn"
 local MODE_RECORD_EDIT_BOX = "edit"
 local routeRecordMode = nil
+---@type Room
 local lastStart = nil
-local roomsOnRoute = {}
+---@type Room
 local lastRoom = nil
+---@type table<integer,string>
 local commandsEntered = {}
 local lastCommandWasDirection = false
 local lastTime = os.clock()
 local currentSteps = {}
+---@class RoutePart
+---@field startRoom RoomWithAlias
+---@field endRoom RoomWithAlias
+---@field path table<integer,string>
+local routePart = {
+      startRoom = { id = "start123", domain = "mountains", short = "", exits = {} },
+      endRoom = { id = "end456", domain = "plains", short = "", exits = {} },
+      path = {}
+}
+---@type table<integer,RoutePart>
 local route = {}
 local default_directions = {}
 default_directions["w"] = "w"
@@ -79,13 +90,15 @@ function OnPluginInstall()
 CREATE TABLE IF NOT EXISTS Routes(
    id,
    start_id,
-   end_id
+   end_id,
+   length
    );
    CREATE TABLE IF NOT EXISTS Ways(
       route_id,
       from_id,
       to_id,
-      steps
+      steps,
+      partNumber
       );
       CREATE TABLE IF NOT EXISTS Migrations(
 id,
@@ -97,6 +110,10 @@ short,
 domain,
 visibleExits
       );
+      CREATE TABLE IF NOT EXISTS RoomAliases(
+roomId,
+alias
+);
 ]])
       Migrate(db)
       db:close()
@@ -170,7 +187,7 @@ WHERE w.from_id=:room_id
       return destinationRooms
 end -- getRoutesWithRoom
 
-function MStart(name, line, wildcards)
+function MStart(name, line, wildcards, alias)
       if routeRecordMode == nil then
             local selectedMode = MMode()
             if (selectedMode == nil) then
@@ -194,7 +211,7 @@ function MStart(name, line, wildcards)
       end -- if
 
       if IsStartingRoom(currentRoom.id) then
-            StartRoute(currentRoom)
+            StartRoute(currentRoom, alias)
       else
             local possibleStarts = GetRoutesWithRoom(currentRoom.id)
             local lBoxEntries = { new = "Diesen Raum als Startpunkt nutzen." }
@@ -207,7 +224,7 @@ function MStart(name, line, wildcards)
                   "Dieser Raum ist noch nicht als Startraum angebunden. Wählen sie die passende Aktion aus.", nil,
                   lBoxEntries, "new")
             if lBoxResult == "new" then
-                  StartRoute(currentRoom)
+                  StartRoute(currentRoom, alias)
             elseif lBoxResult == "go_start" then
                   ShowPossibleGotosForMstart(possibleStarts)
             elseif lBoxResult == "additional_route" then
@@ -245,7 +262,8 @@ function GetRoomInfo(warnOnRoomWithoutId)
       return room
 end       -- getRoomInfo
 
-function StartRoute(room)
+function StartRoute(room, alias)
+      room.alias = alias
       lastStart = room
       lastRoom = room
       currentSteps = {}
@@ -274,8 +292,8 @@ function OnPluginBroadcast(msg, id, name, text)
             if (room == nil) then
                   return nil
             end -- room is nil
-            table.insert(roomsOnRoute, room)
-            if (os.clock() - 0.1) > lastTime then
+
+            if (os.clock() - 0.2) > lastTime then
                   local timeNumber = math.floor((os.clock() - lastTime) * 100)
                   local timeStr = "(" .. tostring(timeNumber) .. "ms)"
                   if lastCommandWasDirection == false then
@@ -285,17 +303,14 @@ function OnPluginBroadcast(msg, id, name, text)
                   end
             end
             if routeRecordMode == MODE_RECORD_EDIT_BOX and #currentSteps == 0 and #commandsEntered ~= #currentSteps then
-                  local suggestion = table.concat(commandsEntered, "\n")
+                  local suggestion = ConcatTableWithNewline(commandsEntered)
                   local inputResult = utils.editbox(
                         "Geben Sie den Weg vom letzten gültigen Raum in diesen Raum an. Im Textfeld sind bereits alle getätigten Befehle seit dem Betreten des letzten Raums enthalten.",
                         "Weg angeben", suggestion)
                   if inputResult == nil then
                         currentSteps = commandsEntered
                   else
-                        local parts = {}
-                        for line in string.gmatch(inputResult, "[^\n]*") do
-                              table.insert(parts, line)
-                        end
+                        local parts = SplitStringByNewline(inputResult)
                         currentSteps = parts
                   end
             end
@@ -306,9 +321,15 @@ function OnPluginBroadcast(msg, id, name, text)
       end -- is new room
 end       -- OnPluginBroadcast
 
-function MEnd(name, wildcards)
+function MEnd(name, wildcards, aliasName)
+      if lastStart == nil then
+            utils.msgbox("Im Moment wird kein Weg aufgezeichnet der beendet werden könnte.")
+            return
+      end
+      route[#route].endRoom.alias = aliasName
       CheckLoop()
-      local lbxResult = 1
+      local lbxResult = nil
+      lbxResult = 1
       while lbxResult ~= nil do
             local lbxRoute = {}
             local maximumDigitsCount = math.floor(math.log(#route, 10))
@@ -321,9 +342,19 @@ function MEnd(name, wildcards)
             end -- for loop
             lbxResult = tonumber(utils.listbox(
                   "Wählen Sie einen Abschnitt der Route aus und klicken Sie auf ok, um diesen Abschnitt zu bearbeiten. Klicken Sie auf abbrechen um dass Bearbeiten der Route abzuschließen.",
-                  "Route bearbeiten", lbxRoute, lbxResult)) or 0
-      end -- Show listbox loop
-end       -- function
+                  "Route bearbeiten", lbxRoute, lbxResult))
+            if lbxResult ~= nil then
+                  local routePart = route[lbxResult]
+                  local editBoxResult = utils.editbox(
+                        "Geben Sie den Weg zwischen den beiden Räumen an und trennen Sie jedes Kommando durch eine neue Zeile.\r\nVon: " ..
+                        routePart.startRoom.short .. "\r\nNach:" .. routePart.endRoom.short, "Wegabschnitt bearbeiten",
+                        ConcatTableWithNewline(routePart.path))
+                  if editBoxResult ~= nil then
+                        routePart.path = SplitStringByNewline(editBoxResult)
+                  end
+            end -- if user clicked on ok
+      end       -- Show listbox loop
+end             -- function
 
 function CheckLoop()
       local loops = {}
@@ -367,3 +398,106 @@ function CheckLoop()
             end                                        -- if answer was yes
       end                                              -- if loops found
 end                                                    -- function checkLoops
+
+function AddAliasToDatabase(roomId, alias)
+      local db = sqlite3.open(db_name)
+      local stm = db:prepare([[INSERT INTO RoomAliaes
+      (roomId,alias)
+      VALUES(:roomId,:alias)]])
+      stm:bind_names({ roomId = roomId, alias = alias })
+      stm:step()
+      stm:finalize()
+end -- function addAlias
+
+---@return string
+---@param tableToConcat table<integer,string>
+function ConcatTableWithNewline(tableToConcat)
+      return table.concat(tableToConcat, "\r\n")
+end -- function ConcatTableWithNewline
+
+---@return table<integer,string>
+---@param str string
+function SplitStringByNewline(str)
+      local counter = 1
+      local returningTable = {}
+      for line in string.gmatch(str, "[^\r^\n]+") do
+            returningTable[counter] = line
+            counter = counter + 1
+      end -- for each line
+      return returningTable
+end       -- function SplitStringByNewline
+
+function SaveRoute()
+      ---@type table<integer,RoomWithAlias>
+      local roomsInRoute = {}
+      ---@type table<string, integer>
+      local roomsMap = {}
+      local insertCounter = 1
+      ---@param map table<string,integer>
+      ---@param roomsList table<integer,table>
+      ---@param currentRoom table
+      ---@param counter integer
+      local function addEveryRoom(map, roomsList, currentRoom, counter)
+            if map[currentRoom.id] == nil then
+                  map[currentRoom.id] = counter
+                  roomsList[counter] = currentRoom
+                  return counter + 1
+            else
+                  local oldPosition = map[currentRoom.id]
+                  roomsList[oldPosition].alias = roomsList[oldPosition].alias or currentRoom.alias
+                  return counter
+            end -- if room exists in map or else
+      end       -- local function addEveryRoom
+
+      for nr, routePart in pairs(route) do
+            insertCounter = addEveryRoom(roomsMap, roomsInRoute, routePart.startRoom, insertCounter)
+            insertCounter = addEveryRoom(roomsMap, roomsInRoute, routePart.endRoom, insertCounter)
+            if roomsMap[routePart.endRoom.id] == nil then
+                  roomsMap[routePart.endRoom.id] = insertCounter
+                  roomsInRoute[insertCounter] = routePart.endRoom
+                  insertCounter = insertCounter + 1
+            end -- if end room already exists in map
+      end       -- for each part in route
+
+      -- Initialize db
+      local db = sqlite3.open(db_name)
+      db:exec("BEGIN TRANSACTION;")
+
+      -- Add rooms
+      local checkExistingRoomsCommand = [[SELECT id FROM Rooms WHERE id in()]]
+      local roomsOnRouteCount = #roomsInRoute
+      local checkExistingRoomsQueryParameters = {}
+      for keyNr, room in roomsInRoute do
+            checkExistingRoomsCommand = checkExistingRoomsCommand .. ":room " .. keyNr
+            checkExistingRoomsQueryParameters[":room" .. keyNr] = room.id
+            if keyNr ~= (roomsOnRouteCount) then
+                  checkExistingRoomsCommand = checkExistingRoomsCommand .. ","
+            end -- if not last element in array
+      end       -- for each room in the route
+      checkExistingRoomsCommand = checkExistingRoomsCommand .. ")"
+
+      local existingRoomsStm = db:prepare(checkExistingRoomsCommand)
+      existingRoomsStm:bind_names(checkExistingRoomsQueryParameters)
+      local existingRoomsQueryResult = existingRoomsStm:step()
+
+      while existingRoomsQueryResult == sqlite3.ROW do
+            local values = existingRoomsStm:get_named_values()
+            table.remove(roomsInRoute, roomsMap[values.id])
+      end -- for each row in the existing rooms query
+
+      assert(existingRoomsQueryResult == sqlite3.DONE, "Fehler beim Abruf der Raumliste.")
+      existingRoomsStm:finalize()
+
+      -- Insert new rooms
+      local insertCmdTable = {}
+      local insertRoomsCmd = "INSERT INTO Rooms(id,short,domain, visibleExits) values(:id,:short,:domain, :exits)"
+      local insertRoomsStmt = db:prepare(insertRoomsCmd)
+      for keyNr, room in pairs(roomsInRoute) do
+            insertRoomsStmt:bind_names({ id = room.id, short = room.short, domain = room.domain, exits = room.exits })
+            local result = insertRoomsStmt:step()
+            assert(result == sqlite3.ROW, "Fehler beim Einfügen neuer Räume.")
+            insertRoomsStmt:reset()
+      end -- for each room in the route
+      insertRoomsStmt:finalize()
+      db:close()
+end -- function SaveRoute

@@ -8,10 +8,15 @@ function OnPluginBroadcast(msg, id, name, data)
         local startNr, endNr, subpackage, gmcpJson = string.find(data, [[^%s*MG.char.(vitals)%s*({.*})%s*$]])
         if subpackage == "vitals" then
             local decoded = json.decode(gmcpJson)
-
-            SetVariable("hp", decoded.hp)
-            SetVariable("sp", decoded.sp)
-            SetVariable("poison", decoded.poison)
+            if decoded.hp then
+                SetVariable("hp", decoded.hp)
+            end -- if hp available
+            if decoded.sp then
+                SetVariable("sp", decoded.sp)
+            end -- if sp available
+            if decoded.poison then
+                SetVariable("poison", decoded.poison)
+            end -- if poison available
             BroadcastPlugin(1, gmcpJson)
         end -- nil check if
     end     -- GMCP message If
