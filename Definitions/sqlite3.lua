@@ -60,6 +60,10 @@ function sqlite3Db:close()
     return 0
 end
 
+---@return string
+function sqlite3Db:errmsg()
+    return "Error message"
+end
 ---@class sqlite3
 sqlite3 = {
     OK = 0,

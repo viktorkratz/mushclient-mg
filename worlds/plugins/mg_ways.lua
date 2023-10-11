@@ -9,7 +9,7 @@ local MODE_RECORD_ALL = "all"
 local MODE_RECORD_WARNING = "warn"
 local MODE_RECORD_EDIT_BOX = "edit"
 local routeRecordMode = nil
----@type Room
+---@type Room?
 local lastStart = nil
 ---@type Room
 local lastRoom = nil
@@ -89,14 +89,14 @@ function OnPluginInstall()
       db:exec([[
 CREATE TABLE IF NOT EXISTS Routes(
    id,
-   start_id,
-   end_id,
+   startId,
+   endId,
    length
    );
    CREATE TABLE IF NOT EXISTS Ways(
-      route_id,
-      from_id,
-      to_id,
+      routeId,
+      fromId,
+      toId,
       steps,
       partNumber
       );
@@ -146,10 +146,10 @@ end -- function migrate
 
 function IsStartingRoom(roomId)
       local db = sqlite3.open(db_name)
-      local stm = db:prepare("SELECT count(*) FROM Routes WHERE start_id=:room_id")
-      stm:bind_names({ room_id = roomId })
+      local stm = db:prepare("SELECT count(*) FROM Routes WHERE startId=:roomId")
+      stm:bind_names({ roomId = roomId })
       local result = stm:step()
-      assert(result == sqlite3.ROW, "Fehler beim Abrufen der Tabelle routes")
+      AssertDb(result == sqlite3.ROW, db)
       local count = stm:get_value(0)
       stm:finalize()
       db:close();
@@ -157,28 +157,28 @@ function IsStartingRoom(roomId)
       return count > 0
 end --
 
-function GetRoutesWithRoom(room_id)
+function GetRoutesWithRoom(roomId)
       local db = sqlite3.open(db_name)
       local stm = db:prepare([[
-SELECT rstart.short as start_short, rstart.id as start_id,
-rend.short as end_short,  rend.id as end_id
+SELECT rstart.short as startShort, rstart.id as startId,
+rend.short as endShort,  rend.id as endId
 FROM Ways w
 INNER JOIN Routes
-ON w.route_id=routes.id
+ON w.routeId=routes.id
 INNER JOIN rooms rend
-on rend.id=routes.end_id
+on rend.id=routes.endId
 INNER JOIN rooms rstart
-ON rstart.id=routes.start_id
-WHERE w.from_id=:room_id
+ON rstart.id=routes.startId
+WHERE w.fromId=:roomId
 ]])
-      stm:bind_names({ room_id = room_id })
+      stm:bind_names({ roomId = roomId })
       local result = stm:step()
       local destinationRooms = {}
       while result == sqlite3.ROW do
             local row = stm:get_named_values()
             table.insert(destinationRooms, {
-                  destination = { id = row.end_id, short = row.end_short },
-                  start = { id = row.start_id, short = row.start_short }
+                  destination = { id = row.endId, short = row.endShort },
+                  start = { id = row.startId, short = row.startShort }
             })
             stm:step()
       end -- while
@@ -187,7 +187,15 @@ WHERE w.from_id=:room_id
       return destinationRooms
 end -- getRoutesWithRoom
 
-function MStart(name, line, wildcards, alias)
+---@param name string
+---@param line string
+---@param groups table<integer,string>
+function MStart(name, line, groups)
+      local alias = nil
+      alias = groups[1]
+      if alias == "" then
+            alias = nil
+      end
       if routeRecordMode == nil then
             local selectedMode = MMode()
             if (selectedMode == nil) then
@@ -262,7 +270,7 @@ function GetRoomInfo(warnOnRoomWithoutId)
       return room
 end       -- getRoomInfo
 
-function StartRoute(room, alias)
+function StartRoute(room, wildcards, alias)
       room.alias = alias
       lastStart = room
       lastRoom = room
@@ -321,12 +329,19 @@ function OnPluginBroadcast(msg, id, name, text)
       end -- is new room
 end       -- OnPluginBroadcast
 
-function MEnd(name, wildcards, aliasName)
+---@param name string
+---@param commands string
+---@param groupsTable table<integer,string>
+function MEnd(name, commands, groupsTable)
       if lastStart == nil then
             utils.msgbox("Im Moment wird kein Weg aufgezeichnet der beendet werden könnte.")
             return
       end
-      route[#route].endRoom.alias = aliasName
+
+      if groupsTable[1] ~= nil and groupsTable[1] ~= "" then
+            route[#route].endRoom.alias = groupsTable[1]
+      end
+
       CheckLoop()
       local lbxResult = nil
       lbxResult = 1
@@ -354,7 +369,9 @@ function MEnd(name, wildcards, aliasName)
                   end
             end -- if user clicked on ok
       end       -- Show listbox loop
-end             -- function
+      SaveRoute()
+      lastStart = nil
+end -- function
 
 function CheckLoop()
       local loops = {}
@@ -367,7 +384,7 @@ function CheckLoop()
                   loopCounter = loopCounter + 1
             end -- if start room already used
             usedStartRooms[startRoomId] = nr
-      end
+      end       -- for each route part
 
       if loopCounter > 0 then
             local answer = utils.msgbox("Es wurden Schleifen im Weg entdeckt. Sollen diese entfernt werden?", nil,
@@ -399,14 +416,20 @@ function CheckLoop()
       end                                              -- if loops found
 end                                                    -- function checkLoops
 
-function AddAliasToDatabase(roomId, alias)
-      local db = sqlite3.open(db_name)
-      local stm = db:prepare([[INSERT INTO RoomAliaes
+---@param roomId string
+---@param alias string
+---@param database sqlite3Db?
+function AddAliasToDatabase(roomId, alias, database)
+      local db = database or sqlite3.open(db_name)
+      local stm = db:prepare([[INSERT INTO RoomAliases
       (roomId,alias)
       VALUES(:roomId,:alias)]])
       stm:bind_names({ roomId = roomId, alias = alias })
       stm:step()
       stm:finalize()
+      if database == nil then
+            db:close()
+      end
 end -- function addAlias
 
 ---@return string
@@ -464,12 +487,12 @@ function SaveRoute()
       db:exec("BEGIN TRANSACTION;")
 
       -- Add rooms
-      local checkExistingRoomsCommand = [[SELECT id FROM Rooms WHERE id in()]]
+      local checkExistingRoomsCommand = [[SELECT id FROM Rooms WHERE id in(]]
       local roomsOnRouteCount = #roomsInRoute
       local checkExistingRoomsQueryParameters = {}
-      for keyNr, room in roomsInRoute do
-            checkExistingRoomsCommand = checkExistingRoomsCommand .. ":room " .. keyNr
-            checkExistingRoomsQueryParameters[":room" .. keyNr] = room.id
+      for keyNr, room in pairs(roomsInRoute) do
+            checkExistingRoomsCommand = checkExistingRoomsCommand .. ":room" .. keyNr
+            checkExistingRoomsQueryParameters["room" .. keyNr] = room.id
             if keyNr ~= (roomsOnRouteCount) then
                   checkExistingRoomsCommand = checkExistingRoomsCommand .. ","
             end -- if not last element in array
@@ -483,9 +506,10 @@ function SaveRoute()
       while existingRoomsQueryResult == sqlite3.ROW do
             local values = existingRoomsStm:get_named_values()
             table.remove(roomsInRoute, roomsMap[values.id])
+            existingRoomsQueryResult = existingRoomsStm:step()
       end -- for each row in the existing rooms query
 
-      assert(existingRoomsQueryResult == sqlite3.DONE, "Fehler beim Abruf der Raumliste.")
+      AssertDb(existingRoomsQueryResult == sqlite3.DONE, db)
       existingRoomsStm:finalize()
 
       -- Insert new rooms
@@ -493,11 +517,51 @@ function SaveRoute()
       local insertRoomsCmd = "INSERT INTO Rooms(id,short,domain, visibleExits) values(:id,:short,:domain, :exits)"
       local insertRoomsStmt = db:prepare(insertRoomsCmd)
       for keyNr, room in pairs(roomsInRoute) do
-            insertRoomsStmt:bind_names({ id = room.id, short = room.short, domain = room.domain, exits = room.exits })
+            insertRoomsStmt:bind_names({
+                  id = room.id,
+                  short = room.short,
+                  domain = room.domain,
+                  exits = json.encode(room.exits)
+            })
             local result = insertRoomsStmt:step()
-            assert(result == sqlite3.ROW, "Fehler beim Einfügen neuer Räume.")
+            AssertDb(result == sqlite3.DONE, db)
             insertRoomsStmt:reset()
+            if room.alias ~= nil then
+                  AddAliasToDatabase(room.id, room.alias, db)
+            end
       end -- for each room in the route
       insertRoomsStmt:finalize()
+
+      -- Add new route
+      local insertRouteStmt = db:prepare([[INSERT INTO Routes
+(id, startId,   endId,    length)
+VALUES(:id, :startId, :endId, :length)]])
+      local routeId = CreateGUID()
+      insertRouteStmt:bind_names({ id = routeId, startId = route[1].startRoom.id, endId = route[#route].endRoom.id,
+            length = #route })
+      AssertDb(insertRouteStmt:step() == sqlite3.DONE, db)
+      insertRouteStmt:finalize()
+
+      -- Insert ways
+      local insertWaysStmt = db:prepare([[INSERT INTO Ways
+(routeId,fromId,toId,steps,partNumber)
+VALUES
+(:routeId,:fromId,:toId,:steps,:partNumber)]])
+
+      for partNr, routePart in pairs(route) do
+            insertWaysStmt:bind_names({ routeId = routeId, fromId = routePart.startRoom.id, toId = routePart.endRoom.id,
+                  steps = json.encode(routePart.path), partNumber = partNr })
+            AssertDb(insertWaysStmt:step() == sqlite3.DONE, db)
+            insertWaysStmt:reset()
+      end
+      db:exec("END TRANSACTION")
       db:close()
 end -- function SaveRoute
+
+---@param check boolean
+---@param db sqlite3Db
+function AssertDb(check, db)
+      if check == false then
+            error(db:errmsg())
+      end
+end

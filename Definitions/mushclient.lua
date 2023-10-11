@@ -107,3 +107,8 @@ end
 function SaveState  ();
     return ReturnCodes.eOK
 end
+
+---@return string
+function CreateGUID()
+    return "some guid"
+end
