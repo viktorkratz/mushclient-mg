@@ -15,8 +15,11 @@ local lastStart = nil
 local lastRoom = nil
 ---@type table<integer,string>
 local commandsEntered = {}
+---@type boolean
 local lastCommandWasDirection = false
+---@type number
 local lastTime = os.clock()
+---@type table<integer,string>
 local currentSteps = {}
 ---@class RoutePart
 ---@field startRoom RoomWithAlias
@@ -29,60 +32,17 @@ local routePart = {
 }
 ---@type table<integer,RoutePart>
 local route = {}
-local default_directions = {}
-default_directions["w"] = "w"
-default_directions["westen"] = "w"
-default_directions["westoben"] = "wob"
-default_directions["wob"] = "wob"
-default_directions["wu"] = "wu"
-default_directions["westunten"] = "wu"
-default_directions["sw"] = "sw"
-default_directions["suedwesten"] = "sw"
-default_directions["swob"] = "swob"
-default_directions["suedwestoben"] = "swob"
-default_directions["swu"] = "swu"
-default_directions["suedwestunten"] = "swu"
-default_directions["s"] = "s"
-default_directions["sob"] = "sob"
-default_directions["suedoben"] = "sob"
-default_directions["su"] = "su"
-default_directions["suedunten"] = "su"
-default_directions["so"] = "so"
-default_directions["suedosten"] = "so"
-default_directions["soob"] = "soob"
-default_directions["suedostoben"] = "soob"
-default_directions["sou"] = "sou"
-default_directions["suedostunten"] = "sou"
-default_directions["o"] = "o"
-default_directions["e"] = "o" -- For people used to play english muds :)
-default_directions["osten"] = "o"
-default_directions["oob"] = "oob"
-default_directions["ostoben"] = "oob"
-default_directions["ou"] = "ou"
-default_directions["ostunten"] = "ou"
-default_directions["no"] = "no"
-default_directions["nordosten"] = "no"
-default_directions["noob"] = "noob"
-default_directions["nordostoben"] = "noob"
-default_directions["nou"] = "nou"
-default_directions["nordostunten"] = "nou"
-default_directions["n"] = "n"
-default_directions["norden"] = "n"
-default_directions["nob"] = "nob"
-default_directions["nordoben"] = "nob"
-default_directions["nu"] = "nu"
-default_directions["nordunten"] = "nu"
-default_directions["nw"] = "nw"
-default_directions["nordwesten"] = "nw"
-default_directions["nwob"] = "nwob"
-default_directions["nordwestoben"] = "nwob"
-default_directions["nwu"] = "nwu"
-default_directions["nordwestunten"] = "nwu"
-default_directions["ob"] = "ob"
-default_directions["oben"] = "ob"
-default_directions["u"] = "u"
-default_directions["unten"] = "u"
-default_directions["raus"] = "raus"
+---@type boolean
+local isInRevertMode = false
+---@type boolean
+local autoWalk = false
+---@type table?
+---@class RoutePosition
+---@field routePartNumber integer
+---@field pathNumber integer
+local walkingRoutePosition = nil
+---@type boolean
+local blockUserCommands = false
 
 function OnPluginInstall()
       local db = sqlite3.open(db_name)
@@ -185,7 +145,7 @@ WHERE w.fromId=:roomId
       stm:finalize()
       db:close()
       return destinationRooms
-end -- getRoutesWithRoom
+end -- function getRoutesWithRoom
 
 ---@param name string
 ---@param line string
@@ -279,9 +239,12 @@ function StartRoute(room, wildcards, alias)
 end
 
 function OnPluginCommand(sText)
+      if blockUserCommands then
+            return false
+      end
       if lastStart ~= nil then
             lastTime = os.clock()
-            local direction = default_directions[sText]
+            local direction = GetDirectionForCommand(sText)
             lastCommandWasDirection = false
             if direction ~= nil then
                   lastCommandWasDirection = true
@@ -293,6 +256,16 @@ function OnPluginCommand(sText)
       end       -- if recording route
       return true
 end
+
+function OnPluginLineReceived(sText)
+      if sText == "Wie bitte?" and lastStart ~= nil and #currentSteps > 0 then
+            local indexOfElementToRemove = #currentSteps
+            print("Das Kommando " ..
+                  currentSteps[indexOfElementToRemove] .. " wurde aufgrund der Rückmeldung 'Wie bitte?' entfernt.")
+            table.remove(currentSteps, indexOfElementToRemove)
+      end -- if command was "Wie bitte?" and there is an existing current step on the current route.
+      return true
+end       -- function OnPluginLineReceived
 
 function OnPluginBroadcast(msg, id, name, text)
       if id == mg_rooms_id and msg == 1 and lastStart then
@@ -472,7 +445,7 @@ function SaveRoute()
             end -- if room exists in map or else
       end       -- local function addEveryRoom
 
-      for nr, routePart in pairs(route) do
+      for nr, routePart in ipairs(route) do
             insertCounter = addEveryRoom(roomsMap, roomsInRoute, routePart.startRoom, insertCounter)
             insertCounter = addEveryRoom(roomsMap, roomsInRoute, routePart.endRoom, insertCounter)
             if roomsMap[routePart.endRoom.id] == nil then
@@ -490,7 +463,7 @@ function SaveRoute()
       local checkExistingRoomsCommand = [[SELECT id FROM Rooms WHERE id in(]]
       local roomsOnRouteCount = #roomsInRoute
       local checkExistingRoomsQueryParameters = {}
-      for keyNr, room in pairs(roomsInRoute) do
+      for keyNr, room in ipairs(roomsInRoute) do
             checkExistingRoomsCommand = checkExistingRoomsCommand .. ":room" .. keyNr
             checkExistingRoomsQueryParameters["room" .. keyNr] = room.id
             if keyNr ~= (roomsOnRouteCount) then
@@ -516,7 +489,7 @@ function SaveRoute()
       local insertCmdTable = {}
       local insertRoomsCmd = "INSERT INTO Rooms(id,short,domain, visibleExits) values(:id,:short,:domain, :exits)"
       local insertRoomsStmt = db:prepare(insertRoomsCmd)
-      for keyNr, room in pairs(roomsInRoute) do
+      for keyNr, room in ipairs(roomsInRoute) do
             insertRoomsStmt:bind_names({
                   id = room.id,
                   short = room.short,
@@ -537,8 +510,12 @@ function SaveRoute()
 (id, startId,   endId,    length)
 VALUES(:id, :startId, :endId, :length)]])
       local routeId = CreateGUID()
-      insertRouteStmt:bind_names({ id = routeId, startId = route[1].startRoom.id, endId = route[#route].endRoom.id,
-            length = #route })
+      insertRouteStmt:bind_names({
+            id = routeId,
+            startId = route[1].startRoom.id,
+            endId = route[#route].endRoom.id,
+            length = #route
+      })
       AssertDb(insertRouteStmt:step() == sqlite3.DONE, db)
       insertRouteStmt:finalize()
 
@@ -548,15 +525,26 @@ VALUES(:id, :startId, :endId, :length)]])
 VALUES
 (:routeId,:fromId,:toId,:steps,:partNumber)]])
 
-      for partNr, routePart in pairs(route) do
-            insertWaysStmt:bind_names({ routeId = routeId, fromId = routePart.startRoom.id, toId = routePart.endRoom.id,
-                  steps = json.encode(routePart.path), partNumber = partNr })
+      for partNr, routePart in ipairs(route) do
+            insertWaysStmt:bind_names({
+                  routeId = routeId,
+                  fromId = routePart.startRoom.id,
+                  toId = routePart.endRoom.id,
+                  steps = json.encode(routePart.path),
+                  partNumber = partNr
+            })
             AssertDb(insertWaysStmt:step() == sqlite3.DONE, db)
             insertWaysStmt:reset()
       end
       db:exec("END TRANSACTION")
       db:close()
-end -- function SaveRoute
+      if isInRevertMode == false then
+            local revertAnswer = utils.msgbox("Soll die umgekehrte Route errechnet werden?", nil, "yesno", "?")
+            if revertAnswer == "yes" then
+                  ReverseRoute()
+            end -- if route should be reverted
+      end       -- if is not in revert mode
+end             -- function SaveRoute
 
 ---@param check boolean
 ---@param db sqlite3Db
@@ -565,3 +553,121 @@ function AssertDb(check, db)
             error(db:errmsg())
       end
 end
+
+function ReverseRoute()
+      for num, part in ipairs(route) do
+            part.startRoom, part.endRoom = part.endRoom, part.startRoom
+            for pathPartNr, pathPart in ipairs(part.path) do
+                  part.path[pathPartNr] = GetReverseExit(pathPart)
+            end -- for each command in the path
+            table.reverse(part.path)
+      end       -- for each room transition
+      table.reverse(route)
+end             -- function ReverseRoute
+
+do              -- functions with pre-defined local tables
+      ---@type table<string,string>
+      local reverseDirections = {
+            w = "o",
+            wob = "ou",
+            wu = "oob",
+            sw = "no",
+            swob = "nwu",
+            swu = "nwob",
+            s = "n",
+            sob = "nu",
+            su = "nob",
+            so = "nw",
+            soob = "nwu",
+            sou = "nwob",
+            o = "w",
+            oob = "wu",
+            ou = "wob",
+            no = "sw",
+            noob = "swu",
+            nou = "swob",
+            n = "s",
+            nob = "su",
+            nu = "sob",
+            nw = "so",
+            nwob = "sou",
+            nwu = "soob",
+            ob = "u",
+            u = "ob"
+      }
+
+      ---@param exit string
+      ---@return string?
+      function GetReverseExit(exit)
+            return reverseDirections[exit] or exit
+      end -- function GetReverseExit
+
+      ---@type table<string,string>
+      local default_directions = {
+            w = "w",
+            westen = "w",
+            westoben = "wob",
+            wob = "wob",
+            wu = "wu",
+            westunten = "wu",
+            sw = "sw",
+            suedwesten = "sw",
+            swob = "swob",
+            suedwestoben = "swob",
+            swu = "swu",
+            suedwestunten = "swu",
+            s = "s",
+            sob = "sob",
+            suedoben = "sob",
+            su = "su",
+            suedunten = "su",
+            so = "so",
+            suedosten = "so",
+            soob = "soob",
+            suedostoben = "soob",
+            sou = "sou",
+            suedostunten = "sou",
+            o = "o",
+            e = "o", -- For people used to play english muds :)
+            osten = "o",
+            oob = "oob",
+            ostoben = "oob",
+            ou = "ou",
+            ostunten = "ou",
+            no = "no",
+            nordosten = "no",
+            noob = "noob",
+            nordostoben = "noob",
+            nou = "nou",
+            nordostunten = "nou",
+            n = "n",
+            norden = "n",
+            nob = "nob",
+            nordoben = "nob",
+            nu = "nu",
+            nordunten = "nu",
+            nw = "nw",
+            nordwesten = "nw",
+            nwob = "nwob",
+            nordwestoben = "nwob",
+            nwu = "nwu",
+            nordwestunten = "nwu",
+            ob = "ob",
+            oben = "ob",
+            u = "u",
+            unten = "u",
+            raus = "raus"
+      }
+      function GetDirectionForCommand(command)
+            return default_directions[command]
+      end -- function GetDirectionForCommand
+end       -- do
+
+---@param tableToReverse table<integer,any>
+function table.reverse(tableToReverse)
+      local tableLength = #tableToReverse
+      for i = 0, tableLength / 2 do
+            tableToReverse[i + 1], tableToReverse[tableLength - i] = tableToReverse[tableLength - i],
+                tableToReverse[i + 1]
+      end -- for the first half of the table
+end       -- function ReverseTable
