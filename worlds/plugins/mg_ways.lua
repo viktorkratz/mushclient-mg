@@ -9,7 +9,7 @@ local MODE_RECORD_ALL = "all"
 local MODE_RECORD_WARNING = "warn"
 local MODE_RECORD_EDIT_BOX = "edit"
 local routeRecordMode = nil
----@type Room?
+---@type RoomWithAlias?
 local lastStart = nil
 ---@type Room
 local lastRoom = nil
@@ -43,6 +43,87 @@ local autoWalk = false
 local walkingRoutePosition = nil
 ---@type boolean
 local blockUserCommands = false
+
+local function editRoutePart(index)
+      local routePart = route[index]
+
+      local editBoxResult = utils.editbox(
+            "Geben Sie den Weg zwischen den beiden Räumen an und trennen Sie jedes Kommando durch eine neue Zeile.\r\nVon: " ..
+            routePart.startRoom.short .. "\r\nNach:" .. routePart.endRoom.short,
+            "Wegabschnitt bearbeiten",
+            ConcatTableWithNewline(routePart.path))
+      if editBoxResult ~= nil then
+            routePart.path = SplitStringByNewline(editBoxResult)
+      end -- User edited the part
+end       -- function editRoutePart
+
+---@param listFocusIndex integer?
+local function editRoute(listFocusIndex)
+      listFocusIndex = listFocusIndex or 1
+      local msg =
+      "Wählen Sie einen Abschnitt der Route aus und klicken Sie auf ok, um diesen Abschnitt zu bearbeiten. Klicken Sie auf abbrechen um dass Bearbeiten der Route abzuschließen."
+      local title = "Route bearbeiten"
+      ---@type number?
+      local lbxResult = listFocusIndex
+      while lbxResult ~= nil do
+            local lbxRoute = {}
+            local maximumDigitsCount = math.floor(math.log(#route, 10))
+            local formatStr = "%0" .. maximumDigitsCount .. "d"
+            for key, value in ipairs(route) do
+                  lbxRoute[key] =
+                      string.format(formatStr, key) ..
+                      ": " ..
+                      value.startRoom.short .. "-> " .. value.endRoom.short .. ":" .. table.concat(value.path, ";")
+            end -- for loop
+            lbxResult = tonumber(utils.listbox(msg, title, lbxRoute, lbxResult))
+            if lbxResult ~= nil then
+                  editRoutePart(lbxResult)
+            end -- if user clicked on ok
+      end       -- Show listbox loop
+end             -- function EditRoute
+
+local function checkLoop()
+      local loops = {}
+      local usedStartRooms = {}
+      local loopCounter = 0
+      for nr, routePart in ipairs(route) do
+            local startRoomId = routePart.startRoom.id
+            if usedStartRooms[startRoomId] ~= nil then
+                  loops[usedStartRooms[startRoomId]] = nr - 1
+                  loopCounter = loopCounter + 1
+            end -- if start room already used
+            usedStartRooms[startRoomId] = nr
+      end       -- for each route part
+
+      if loopCounter > 0 then
+            local answer = utils.msgbox("Es wurden Schleifen im Weg entdeckt. Sollen diese entfernt werden?", nil,
+                  "yesno")
+            if answer == "yes" then
+                  local currentIndex = 1
+                  local increment = 0
+                  local loopStart = nil
+                  local loopEnd = nil
+                  local maxCounter = #route
+                  while currentIndex <= maxCounter
+                  do
+                        if loopStart == nil and loops[currentIndex] ~= nil then
+                              loopStart = currentIndex
+                              loopEnd = loops[currentIndex]
+                              increment = increment + ((loopEnd + 1) - loopStart)
+                        end -- if start of loop
+
+                        if currentIndex == loopEnd then
+                              loopStart = nil
+                              loopEnd = nil
+                        end -- if end of loop
+
+                        route[currentIndex] = route
+                            [currentIndex + increment] -- If currentCounter+increment is greater then maxCounter, nil is assigned so the array is finished
+                        currentIndex = currentIndex + 1
+                  end                                  -- loops
+            end                                        -- if answer was yes
+      end                                              -- if loops found
+end                                                    -- function checkLoops
 
 function OnPluginInstall()
       local db = sqlite3.open(db_name)
@@ -140,7 +221,7 @@ WHERE w.fromId=:roomId
                   destination = { id = row.endId, short = row.endShort },
                   start = { id = row.startId, short = row.startShort }
             })
-            stm:step()
+            result = stm:step()
       end -- while
       stm:finalize()
       db:close()
@@ -203,9 +284,7 @@ end             -- function mstart
 function ShowPossibleGotosForMstart(routes)
       local lbxDestinationSelectTable = {}
       for i, route in ipairs(routes) do
-            local newEntry = {}
-            newEntry[route.destination.id] = route.destination.short
-            table.insert(lbxDestinationSelectTable, newEntry)
+            lbxDestinationSelectTable[route.destination.id] = route.destination.short
       end -- for
       local lbxResult = utils.listbox("Wählen Sie den Raum aus, in dem die Route begonnen werden soll.", nil,
             lbxDestinationSelectTable)
@@ -315,79 +394,15 @@ function MEnd(name, commands, groupsTable)
             route[#route].endRoom.alias = groupsTable[1]
       end
 
-      CheckLoop()
-      local lbxResult = nil
-      lbxResult = 1
-      while lbxResult ~= nil do
-            local lbxRoute = {}
-            local maximumDigitsCount = math.floor(math.log(#route, 10))
-            local formatStr = "%0" .. maximumDigitsCount .. "d"
-            for key, value in ipairs(route) do
-                  lbxRoute[key] =
-                      string.format(formatStr, key) ..
-                      ": " ..
-                      value.startRoom.short .. "-> " .. value.endRoom.short .. ":" .. table.concat(value.path, ";")
-            end -- for loop
-            lbxResult = tonumber(utils.listbox(
-                  "Wählen Sie einen Abschnitt der Route aus und klicken Sie auf ok, um diesen Abschnitt zu bearbeiten. Klicken Sie auf abbrechen um dass Bearbeiten der Route abzuschließen.",
-                  "Route bearbeiten", lbxRoute, lbxResult))
-            if lbxResult ~= nil then
-                  local routePart = route[lbxResult]
-                  local editBoxResult = utils.editbox(
-                        "Geben Sie den Weg zwischen den beiden Räumen an und trennen Sie jedes Kommando durch eine neue Zeile.\r\nVon: " ..
-                        routePart.startRoom.short .. "\r\nNach:" .. routePart.endRoom.short, "Wegabschnitt bearbeiten",
-                        ConcatTableWithNewline(routePart.path))
-                  if editBoxResult ~= nil then
-                        routePart.path = SplitStringByNewline(editBoxResult)
-                  end
-            end -- if user clicked on ok
-      end       -- Show listbox loop
+      checkLoop()
+      editRoute()
       SaveRoute()
       lastStart = nil
 end -- function
 
-function CheckLoop()
-      local loops = {}
-      local usedStartRooms = {}
-      local loopCounter = 0
-      for nr, routePart in ipairs(route) do
-            local startRoomId = routePart.startRoom.id
-            if usedStartRooms[startRoomId] ~= nil then
-                  loops[usedStartRooms[startRoomId]] = nr - 1
-                  loopCounter = loopCounter + 1
-            end -- if start room already used
-            usedStartRooms[startRoomId] = nr
-      end       -- for each route part
-
-      if loopCounter > 0 then
-            local answer = utils.msgbox("Es wurden Schleifen im Weg entdeckt. Sollen diese entfernt werden?", nil,
-                  "yesno")
-            if answer == "yes" then
-                  local currentIndex = 1
-                  local increment = 0
-                  local loopStart = nil
-                  local loopEnd = nil
-                  local maxCounter = #route
-                  while currentIndex <= maxCounter
-                  do
-                        if loopStart == nil and loops[currentIndex] ~= nil then
-                              loopStart = currentIndex
-                              loopEnd = loops[currentIndex]
-                              increment = increment + ((loopEnd + 1) - loopStart)
-                        end -- if start of loop
-
-                        if currentIndex == loopEnd then
-                              loopStart = nil
-                              loopEnd = nil
-                        end -- if end of loop
-
-                        route[currentIndex] = route
-                            [currentIndex + increment] -- If currentCounter+increment is greater then maxCounter, nil is assigned so the array is finished
-                        currentIndex = currentIndex + 1
-                  end                                  -- loops
-            end                                        -- if answer was yes
-      end                                              -- if loops found
-end                                                    -- function checkLoops
+function MEdit()
+      editRoute(#route)
+end -- function MEdit
 
 ---@param roomId string
 ---@param alias string
@@ -563,9 +578,10 @@ function ReverseRoute()
             table.reverse(part.path)
       end       -- for each room transition
       table.reverse(route)
-end             -- function ReverseRoute
+      lastStart = route[1].startRoom
+end -- function ReverseRoute
 
-do              -- functions with pre-defined local tables
+do  -- functions with pre-defined local tables
       ---@type table<string,string>
       local reverseDirections = {
             w = "o",
@@ -622,6 +638,7 @@ do              -- functions with pre-defined local tables
             su = "su",
             suedunten = "su",
             so = "so",
+            se = "so",
             suedosten = "so",
             soob = "soob",
             suedostoben = "soob",
@@ -635,6 +652,7 @@ do              -- functions with pre-defined local tables
             ou = "ou",
             ostunten = "ou",
             no = "no",
+            ne = "no",
             nordosten = "no",
             noob = "noob",
             nordostoben = "noob",
@@ -658,6 +676,7 @@ do              -- functions with pre-defined local tables
             unten = "u",
             raus = "raus"
       }
+
       function GetDirectionForCommand(command)
             return default_directions[command]
       end -- function GetDirectionForCommand
@@ -671,3 +690,7 @@ function table.reverse(tableToReverse)
                 tableToReverse[i + 1]
       end -- for the first half of the table
 end       -- function ReverseTable
+
+function Walk()
+      Send("test", "test")
+end

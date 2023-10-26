@@ -112,3 +112,9 @@ end
 function CreateGUID()
     return "some guid"
 end
+
+---@return ReturnCodes.eOK
+---@param ... string
+function Send(...)
+    return ReturnCodes
+end

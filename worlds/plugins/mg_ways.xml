@@ -36,6 +36,13 @@
          script="MEnd"
          enabled="y"
       />
+      <alias
+         match="^medit"
+         sequence="100"
+         regexp="y"
+         script="MEdit"
+         enabled="y"
+      />
    </aliases>
    <script>
 <![CDATA[
